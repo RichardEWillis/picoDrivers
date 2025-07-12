@@ -1,0 +1,4 @@
+API Include headers for the library. For use by the higher level project that links to this lib.
+The internal lib source may also reference these headers but will have its own private non-API headers as well, 
+DO NOT move private source headers into this directory and expose to the user application!
+
