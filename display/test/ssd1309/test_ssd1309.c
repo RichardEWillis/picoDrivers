@@ -9,6 +9,9 @@
 #include "ssd1309_textbuffer.h"
 #include "ssd1309_ftb.h"
 #include "ssd1309_linegfx.h"
+#ifdef LED_OVERLAY
+  #include "led_overlay.h"
+#endif
 
 //#if !defined(spi_default) || !defined(PICO_DEFAULT_SPI_SCK_PIN) || !defined(PICO_DEFAULT_SPI_TX_PIN) || !defined(PICO_DEFAULT_SPI_RX_PIN) || !defined(PICO_DEFAULT_SPI_CSN_PIN)
 //#warning "spi/spi_master example requires a board with SPI pins"
@@ -373,6 +376,52 @@ int main() {
             }
             stb_refresh();
             sleep_ms(TEST_MSWAIT_8);
+        }
+    }
+#endif
+
+#ifdef LED_OVERLAY
+    #define LED_XPOS 3
+    #define LED_YPOS 3
+    #define LED_DIGCOUNT 3
+    #define LED_INITVAL 0
+    #define LED_REFRESH_ON_UPDATE 1
+    {
+        void * ledctx = ledo_open(LED_XPOS, LED_YPOS, LED_DIGCOUNT, LED_INITVAL, LED_REFRESH_ON_UPDATE);
+        if ( ! ledctx ) {
+            printf("Error [LED_OVERLAY] ledo_open()\n");   
+            trap_error();
+        }
+        sleep_s(1);
+        if ( ledo_update(ledctx, 123) ) {
+            printf("Error [LED_OVERLAY] ledo_update(123)\n");   
+            trap_error();
+        }
+        sleep_s(1);
+        if ( ledo_update(ledctx, 42) ) {
+            printf("Error [LED_OVERLAY] ledo_update(42)\n");   
+            trap_error();
+        }
+        sleep_s(1);
+        if ( ledo_update(ledctx, 9) ) {
+            printf("Error [LED_OVERLAY] ledo_update(9)\n");   
+            trap_error();
+        }
+        sleep_s(1);
+        if ( ledo_update(ledctx, 0) ) {
+            printf("Error [LED_OVERLAY] ledo_update(0)\n");   
+            trap_error();
+        }
+        sleep_s(1);
+        if ( ledo_refresh(ledctx) ) {
+            printf("Error [LED_OVERLAY] ledo_refresh()\n");   
+            trap_error();
+        }
+        sleep_s(1);
+        ledo_close(&ledctx);
+        if ( ledctx ) {
+            printf("Error [LED_OVERLAY] ledo_close()\n");   
+            trap_error();
         }
     }
 #endif

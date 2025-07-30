@@ -34,13 +34,19 @@ project(test_ssd1309 C CXX ASM)
 pico_sdk_init()
 
 # add definitions (defines) at the global scope
-add_compile_definitions( USE_FLOATING_TXTBUFS USE_LINE_GFX )
+add_compile_definitions( 
+    USE_FLOATING_TXTBUFS 
+    USE_LINE_GFX 
+    DISP_SSD1309
+    LED_OVERLAY
+)
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(test_ssd1309 
+add_executable( test_ssd1309 
     ${CMAKE_CURRENT_LIST_DIR}/../../display/ssd1309/ssd1309_driver.c
     ${CMAKE_CURRENT_LIST_DIR}/../../display/ssd1309/ssd1309_textbuffer.c
+    ${CMAKE_CURRENT_LIST_DIR}/../../display/ssd1309/led_overlay.c
     test_ssd1309.c 
 )
 
@@ -63,6 +69,12 @@ target_include_directories(test_ssd1309 PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}
     ${CMAKE_CURRENT_LIST_DIR}/../../display/include
 )
+
+# optimization control
+SET(CMAKE_C_FLAGS_DEBUG "-g -O0")
+#SET(CMAKE_C_FLAGS_RELEASE "-O2")
+SET(CMAKE_C_FLAGS_RELEASE "-g-O0")
+
 
 pico_add_extra_outputs(test_ssd1309)
 

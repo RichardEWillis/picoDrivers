@@ -217,7 +217,7 @@ extern c_u          CMD_REMAP_COM_IS_DECR;      // COM scanned COM(n-1) .. COM0
 //  gpio_dc     the GPIO respresenting the D/C state (output)
 //  gpio_res    the GPIO representing display reset (output)
 // Return: 0 := success
-int ssd1309drv_init(uint gpio_dc, uint gpio_res);
+int ssd1309drv_init(uint8_t gpio_dc, uint8_t gpio_res);
 
 // Initialize the display, prepare it for data frames.
 // Return: 0 := success

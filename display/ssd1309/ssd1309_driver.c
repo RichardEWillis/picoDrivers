@@ -92,7 +92,7 @@ static void pulse_disp_reset(void) {
 }
 
 // Sets up Display GPIOS: Command Mode, Reset off
-int ssd1309drv_init(uint _gpio_dc, uint _gpio_res) {
+int ssd1309drv_init(uint8_t _gpio_dc, uint8_t _gpio_res) {
     gpio_dc = _gpio_dc;
     gpio_res = _gpio_res;
     gpio_init(gpio_dc);
