@@ -15,6 +15,24 @@
 #include <stdlib.h>
 #include <cpyutils.h>
 
+// simple buffer clear
+int gfxutil_fb_clear(uint8_t * fb, size_t len, uint8_t fast_clean) {
+    int rc = -1;
+    if (fb && len) {
+        if (fast_clean) {
+            uint32_t * f = (uint32_t *)fb;
+            size_t c = len / 4;
+            size_t j;
+            for (j = 0 ; j < c ; j++)
+                f[j] = 0;
+        } else {
+            memset(fb, 0, len);
+        }
+        rc = len;
+    }
+    return rc;
+}
+
 // Simple framebuffer copy. uses a "fast copy" 
 // method when framebuffer sizes are compatible
 int gfxutil_fb_merge(uint8_t * from, uint8_t * to, size_t len) {

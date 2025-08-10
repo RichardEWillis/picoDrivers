@@ -101,6 +101,6 @@ int gfx_setFrameBufferLayerPrio(uint8_t * fb, uint8_t prio);
 // Returns:
 //  0 := SUCCESS
 //  1 := Failed
-int gfx_combineFrameBufferLayers(void);
+int gfx_fb_compositor(void);
 
 #endif /* GFXDRIVERLOWPRIV_H */

@@ -30,6 +30,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <linegfx.h>
+#include <cpyutils.h>
 #include <gfxDriverLowPriv.h>
 
 // must now be initialized as the underlying gfx driver fb size is unknown 
@@ -55,8 +56,10 @@ int lgfx_init(uint8_t layer_prio) {
             gfx_bufferlen = (drvr_screen_pages * drvr_screen_width);
             gfx_fastcopy_enabled = ( (gfx_bufferlen % 4) == 0 );
             gfx_linebuffer = (uint8_t *)malloc(gfx_bufferlen);
-            gfx_setFrameBufferLayerPrio(gfx_linebuffer,layer_prio);
-            rc = (gfx_linebuffer == NULL); // remember, 0|false = gooood
+            if (gfx_linebuffer) {
+                gfxutil_fb_clear(gfx_linebuffer, gfx_bufferlen, gfx_fastcopy_enabled);
+                rc = gfx_setFrameBufferLayerPrio(gfx_linebuffer,layer_prio);
+            }
         } else {
             rc = 0; // ignore a repeat call, already initialized.
         }

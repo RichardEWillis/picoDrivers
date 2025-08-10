@@ -23,6 +23,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <textgfx.h>
+#include <cpyutils.h>
 #include <gfxDriverLowPriv.h>
 
 // The following chars are not looked up but instead directly
@@ -296,6 +297,43 @@ static const uint8_t font_5x7[] = {
 #endif
 };
 
+// NEW - text now renders into its own private
+//       frame buffer and does not directly use the
+//       driver's buffer. This allows for priority
+//	     layer compositing with layers set on 
+//		 initialization of each separate graphics
+//       system (text, lines, LEDS, etc.)
+static size_t txt_framebuffer_len = 0;
+static uint8_t * txt_framebuffer = NULL;
+static size_t fb_pix_cols = 0;        /* aka pixel width */
+static size_t fb_pix_height = 0;	  /* vertical pixel | row count */
+static size_t fb_page_count = 0;      /* number of vertical pages, 8 rows per page  */ 
+static uint8_t fb_fastcopy_enabled = 0;  /* if true then faster framebuffer operations are possible, eg. clear. */
+
+// Start the text layer of graphics processing.
+int text_init(uint8_t layer_prio) {
+	int rc = 1;
+	if ( bsp_gfxDriverIsReady() ) {
+		if (txt_framebuffer == NULL) {
+			fb_pix_cols = g_llGfxDrvr->get_DispWidth();
+			fb_pix_height = g_llGfxDrvr->get_DispHeight();
+			fb_page_count = g_llGfxDrvr->get_DispPageHeight();
+			txt_framebuffer_len = (fb_pix_cols * fb_page_count);
+			fb_fastcopy_enabled = ( (txt_framebuffer_len % 4) == 0 );
+			txt_framebuffer = (uint8_t *)malloc(txt_framebuffer_len);
+			if (txt_framebuffer) {
+				gfxutil_fb_clear(txt_framebuffer, txt_framebuffer_len, fb_fastcopy_enabled);
+				// returns 0 on success.
+				rc = gfx_setFrameBufferLayerPrio(txt_framebuffer, layer_prio);
+			}
+		} else {
+			rc = 0; // already setup, ignore call.
+		}
+	}
+	return rc;
+}
+
+
 // PUBLIC Display driver stack pointer is 'g_llGfxDrvr'
 
 // x,y CURRENT cursor position (text box)
@@ -314,7 +352,6 @@ static char * text_buffer = NULL;
 static size_t textBufLen = 0;
 // Some info on the graphics framebuffer and the alignment
 // of the text buffer over it
-static uint32_t fb_pix_cols = 0;        /* aka pixel width */
 static uint32_t tb_left_offset = 0;     /* left offest of TB in the FB ~ 1/2 of width difference */
 
 #define FTB_CTX_WMARK 0xFEEDFACE
@@ -334,14 +371,15 @@ typedef struct ftbgfx_type {
 	uint8_t     currx;
 	uint8_t     curry;
 	uint8_t     do_render;  /* set true to get the underlying text layer to render this box to the screen. if 0 then it's hidden */
-	uint8_t     fb_width;	/* gfx framebuffer, number of horz. rows */
-	uint8_t     fb_pages;   /* gfx framebuffer, number of vert. pages */
+//	uint8_t     fb_width;	/* gfx framebuffer, number of horz. rows */
+//	uint8_t     fb_pages;   /* gfx framebuffer, number of vert. pages */
+	uint8_t     rsvd[2]; 
 	/* the text buffer (contains characters) */
 	uint32_t    tbuf_len;
 	char *      tbuf;
 	/* the destination framebuffer to render onto */
-	uint32_t    fb_len;
-	uint8_t *   frame_buffer; 
+//	uint32_t    fb_len;
+	uint8_t *   frame_buffer; /* copy of the local text framebuffer (clean this up later, no longer required) */
 } ftbgfx_t;
 typedef ftbgfx_t * ftbgfx_p;
 
@@ -355,38 +393,17 @@ static int32_t ftbIDGen = 0;  /* pre-increment */
 // --- Static Text Box API
 // ----------------------------------------------------------------------------
 
-static int textgfx_render(void);
-
-static int tbuf_fill(char c) {
-    int rc = 1;
-    if (text_buffer) {
-        memset(text_buffer, (int)c, textBufLen);
-		if (txt_mode == REFRESH_ON_TEXT_CHANGE) {
-			rc = textgfx_render(); // returns 0 on success
-		} else {
-        	rc = 0;
-		}
-    }
-    return rc;
-}
-
-static int tbuf_clear(void) {
-    return tbuf_fill('\0');
-}
-
-// render current text buffer contents into the 
-// graphics drivers framebuffer.
+// render current text buffer contents into the local text framebuffer.
 // Returns 1 on problems, 0 on success.
 static int textgfx_render(void) {
     int rc = 1;
-    if (text_buffer) {
+    if (txt_framebuffer && text_buffer) {
         uint32_t  i,j;
         uint32_t  fptr = tb_left_offset;    // (STARTING) index for gfx framebuffer
         uint32_t  page = (uint32_t)-1;      // gfx framebuffer page#, rolls over to 0 in the first loop iteration
         const uint8_t * ftb = NULL;         // font buffer pointer, for the n cols of a character. points to leftmost col to start
         char * tb = &(text_buffer[0]);      // shorter alias 
-        uint8_t * frame_buffer = g_llGfxDrvr->get_drvrFrameBuffer();
-
+        
         for ( i = 0 ; i < textBufLen ; i++ ) {
             // for each character location in the text buffer ...
             if ( (i % char_width) == 0 ) {
@@ -398,10 +415,10 @@ static int textgfx_render(void) {
             // render character, by colunms
             ftb = &(font_5x7[(*tb) * FONT_W]); // 1st col. of the font char.
             for ( j = 0 ; j < FONT_W ; j++ ) {
-                frame_buffer[fptr++] = (*ftb) & 0x7F; // msb (bot of font) is blanked
+                txt_framebuffer[fptr++] = (*ftb) & 0x7F; // msb (bot of font) is blanked
                 ftb++; // next col in the font character
             }
-            frame_buffer[fptr++] = 0; // last col of the font is blank (vert. spacing)
+            txt_framebuffer[fptr++] = 0; // last col of the font is blank (vert. spacing)
             tb ++; // next char in the text buffer
         }
 
@@ -409,36 +426,56 @@ static int textgfx_render(void) {
 		// use the higher level BSP API to ensure all fb layers
 		// are properly merged before written to screen.
 		rc = gfx_displayRefresh();
-        //rc = g_llGfxDrvr->refreshDisplay(frame_buffer);
     }
     return rc;
 }
 
+static int tbuf_fill(char c) {
+    int rc = 1;
+    if (text_buffer) {
+		// fills all char locations so...
+		// delete text data already rendered into the local text framebuffer
+		gfxutil_fb_clear(txt_framebuffer, txt_framebuffer_len, fb_fastcopy_enabled);
+		// put 'c' into all character locations in txt buffer
+        memset(text_buffer, (int)c, textBufLen);
+		if (txt_mode == REFRESH_ON_TEXT_CHANGE) {
+			rc = textgfx_render(); // returns 0 on success
+		} else {
+        	rc = 0;
+		}
+    }
+    return rc;
+}
+
+// called by textgfx_clear()
+static int tbuf_clear(void) {
+    return tbuf_fill('\0');
+}
+
+// now using the local framebuffer
 int textgfx_init(int mode, int wrap) {
     int rc = 1;
-    if (!text_buffer && g_llGfxDrvr->IsReady()) {
-        size_t disp_pix_width = g_llGfxDrvr->get_DispWidth();
-        size_t disp_pix_height = g_llGfxDrvr->get_DispHeight();
-        size_t disp_page_height = g_llGfxDrvr->get_DispPageHeight();
+	size_t disp_page_pix_height = fb_pix_height / fb_page_count;
+    if (txt_framebuffer && !text_buffer && g_llGfxDrvr->IsReady()) {
         // For this version we expect the text to fit within one 
         // page of the display. Display pages are groupings of 
         // usually 8 rows of pixels. As such pages are arranged
         // as vertically stacked row groupings in the screen
         // area.
-        if (disp_pix_height >= FONT_5x7_HEIGHT) {
+        if (disp_page_pix_height >= FONT_5x7_HEIGHT) {
             txt_mode = (uint8_t)mode;
             txt_wrap = (uint8_t)wrap;
             curx = cury = 0;
-            char_width = (uint8_t)(disp_pix_width / FONT_5x7_WIDTH);
-            char_height = (uint8_t)disp_page_height;
+            char_width = (uint8_t)(fb_pix_cols / FONT_5x7_WIDTH);
+            char_height = (uint8_t)disp_page_pix_height;
             curx_max = char_width - 1;
             cury_max = char_height - 1;
-            fb_pix_cols = (uint32_t)disp_pix_width;
-            tb_left_offset = (disp_pix_width - (char_width * FONT_5x7_WIDTH)) / 2;
+            fb_pix_cols = (uint32_t)fb_pix_cols;
+            tb_left_offset = (fb_pix_cols - (char_width * FONT_5x7_WIDTH)) / 2;
             textBufLen = (char_width * char_height);
             text_buffer = (char *)malloc(textBufLen);
             if (text_buffer) {
-                tbuf_clear();
+                tbuf_clear(); // this now also deletes data in the text framebuffer
                 rc = 0;
             }
         }
@@ -577,17 +614,20 @@ int textgfx_refresh(void) {
 // --- Ver 2.0 : can use FTB, static text layer or both. FTB is no longer
 // ---           dependent on the static text system.
 // ----------------------------------------------------------------------------
+
+static uint8_t ftb_initialized = 0;
+
 #define DLY_WRITE_FB  0
 #define DO_WRITE_FB   1
 static void ftb_render(ftbgfx_p pftb, int do_writeFB) {
     if (pftb && pftb->do_render) {
-		uint8_t  FB_WIDTH = pftb->fb_width; // pixel framebuffer width, horz pixel count
+		uint8_t  FB_WIDTH = fb_pix_cols; // pixel framebuffer width, horz pixel count
         uint8_t  n = pftb->tl_ypos - (pftb->tl_ypos & 0xF8);
         uint8_t  fbc = pftb->tl_xpos;
         uint32_t fbi = ((uint32_t)(pftb->tl_ypos >> 8) * FB_WIDTH) + pftb->tl_xpos;
         uint32_t fbn = fbi + FB_WIDTH;
-		uint8_t * frame_buffer = pftb->frame_buffer;
-		uint32_t FB_BUF_LEN = pftb->fb_len;
+		uint8_t * frame_buffer = pftb->frame_buffer; // local FTB buffer, not the text's frame buffer.
+		uint32_t FB_BUF_LEN = txt_framebuffer_len;
 
         // n indicates the number of bits in the font col shifted down into the next page down in
         // the framebuffer. If 0 then the FTB pages are perfectly aligned vertically with the 
@@ -694,11 +734,20 @@ static void ftbgfx_tb_clear(ftbgfx_p pftb) {
         	pftb->tbuf[i] = '\0';
 }
 
-void ftbgfx_init(void) {
-	int i;
-	for ( i=0 ; i < FTB_COUNT ; i++ ) {
-		ftbObjList[i].ctx_id = 0;
+int ftbgfx_init(void) {
+	int rc = 1;
+	if (txt_framebuffer) {
+		if (!ftb_initialized) {
+			int i;
+			for ( i=0 ; i < FTB_COUNT ; i++ ) {
+				ftbObjList[i].ctx_id = 0;
+				ftbObjList[i].do_render = 0;
+			}
+			ftb_initialized = 1; // only touch the tables once.
+		}
+		rc = 0; // subsequent calls are ignored.
 	}
+	return rc;
 }
 
 int ftbgfx_get_max_pix_width(void) {
@@ -730,6 +779,8 @@ void * ftbgfx_new(uint8_t xpos, uint8_t ypos, uint8_t width, uint8_t hght, uint8
 		return NULL;
 	if (hght * FONT_5x7_HEIGHT + ypos >= pix_hght )
 		return NULL;
+	if (txt_framebuffer == NULL)
+		return NULL; // text layer needs to be initialized first!
 
 	for ( i=0 ; i < FTB_COUNT ; i++ ) {
 		if (ftbObjList[i].ctx_id == 0) {
@@ -754,10 +805,10 @@ void * ftbgfx_new(uint8_t xpos, uint8_t ypos, uint8_t width, uint8_t hght, uint8
 			phndl->currx = 0;
 			phndl->curry = 0;
 			phndl->do_render = 1; // assume its visible when created
-			phndl->fb_width = (uint8_t)g_llGfxDrvr->get_DispWidth();
-			phndl->fb_pages = (uint8_t)g_llGfxDrvr->get_DispPageHeight();
-			phndl->fb_len = (uint32_t)g_llGfxDrvr->get_FBSize();
-			phndl->frame_buffer = g_llGfxDrvr->get_drvrFrameBuffer();
+			// phndl->fb_width = (uint8_t)g_llGfxDrvr->get_DispWidth();
+			// phndl->fb_pages = (uint8_t)g_llGfxDrvr->get_DispPageHeight();
+			// phndl->fb_len = (uint32_t)g_llGfxDrvr->get_FBSize();
+			phndl->frame_buffer = txt_framebuffer;
 		} else {
 			phndl->tbuf_len = 0;
 			phndl = NULL; // could not allocate mem for text buffer, failing.

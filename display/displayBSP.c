@@ -184,7 +184,7 @@ int gfx_setDisplayBrightness(int bri) {
 // write driver's framebuffer to screen. see also gfx_refreshDisplay()
 // THIS IS THE ONLY CALL THAT MERGES ALL REGISTERED FRAMEBUFFER LAYERS
 int gfx_displayRefresh(void) {
-    gfx_combineFrameBufferLayers(); // merge all fb layers onto the gfx driver fb first.
+    gfx_fb_compositor(); // merge all fb layers onto the gfx driver fb first.
     return g_llGfxDrvr->refreshDisplay( g_llGfxDrvr->get_drvrFrameBuffer() );
 }
 
@@ -197,16 +197,17 @@ int gfx_refreshDisplay(const uint8_t * fb) {
 // Graphic Framebuffer Layer Priority Control
 // under construction and subject to change how this works.
 static uint8_t * fb_layers[FB_LAYER_COUNT] = {0};
+static int       gfx_fb_can_optimize = -1; // do a optimization check once and either set(1) or clear (0) this for future checks.
 
 // Call this method anyways even if it does nothing right now.
 int gfx_setFrameBufferLayerPrio(uint8_t * fb, uint8_t prio) {
     int rc = 1;
-    if ( g_llGfxDrvrPriv && !fb_layers[SET_FB_LAYER_1] ) {
-        // driver ready, if not already done, pre-assign the
-        // text layer which is using the graphic fb right now.
-        fb_layers[SET_FB_LAYER_1] = gfx_getFrameBuffer();
-    }
-    if (fb && (prio > SET_FB_LAYER_1) && (prio < FB_LAYER_COUNT)) {
+    // if ( g_llGfxDrvrPriv && !fb_layers[SET_FB_LAYER_1] ) {
+    //     // driver ready, if not already done, pre-assign the
+    //     // text layer which is using the graphic fb right now.
+    //     fb_layers[SET_FB_LAYER_1] = gfx_getFrameBuffer();
+    // }
+    if (fb && (prio < FB_LAYER_COUNT)) {
         if ( !fb_layers[prio] ) {
             fb_layers[prio] = fb;
             rc = 0;
@@ -216,14 +217,21 @@ int gfx_setFrameBufferLayerPrio(uint8_t * fb, uint8_t prio) {
 }
 
 // call this method to combine fb layers into the driver's buffer
-// TODO / FUTURE - move text to it's own framebuffer.
-int gfx_combineFrameBufferLayers(void) {
+// This now supports text fb on its own layer. Compositor MUST BE RUN
+// to get anything into the graphics framebuffer.
+int gfx_fb_compositor(void) {
     int rc = 1;
-    if ( g_llGfxDrvrPriv && fb_layers[SET_FB_LAYER_1] ) {
+    if ( g_llGfxDrvrPriv ) {
         int i;
-        size_t fblen = g_llGfxDrvr->get_FBSize();
-        uint8_t * drvr_fb = fb_layers[SET_FB_LAYER_1]; // for now, text graphics owns the drivers's fb.
-        for (i = SET_FB_LAYER_2 ; i < FB_LAYER_COUNT ; i++ ) {
+        size_t    fblen   = g_llGfxDrvr->get_FBSize();
+        uint8_t * drvr_fb = g_llGfxDrvr->get_drvrFrameBuffer();
+        // check for fast operation capability (should only need to invoke once)
+        if (gfx_fb_can_optimize < 0) {
+            gfx_fb_can_optimize = (fblen % sizeof(uint32_t)) ? 0 : 1;
+        }
+        // clear driver's fb first to re-do layer compositing into it.
+        gfxutil_fb_clear(drvr_fb, fblen, gfx_fb_can_optimize);
+        for (i = SET_FB_LAYER_BACKGROUND ; i < FB_LAYER_COUNT ; i++ ) {
             if (fb_layers[i]) {
                 gfxutil_fb_merge(fb_layers[i], drvr_fb, fblen);
             }

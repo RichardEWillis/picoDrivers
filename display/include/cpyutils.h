@@ -18,6 +18,27 @@
 #include <stdint.h>
 #include "pico/types.h"
 
+/******************************************************************************
+ * Simple (frame) buffer clear.
+ * 
+ * Clean the given (frame) buffer by zeroing it. This offers a fast option
+ * that zeros 4 bytes ata  time, if available. caller MUST KNOW if it is 
+ * possible; this funtion does not check.
+ * 
+ * Inputs:
+ *  [uint8_t *] fb                  (frame) buffer
+ *  [size_t]    len                 len of 'fb' in bytes
+ *  [uint8_t]   fast_clean (flag)   if true, the fast algorithm will be used.
+ * 
+ * Note:
+ *  [1]     generic enough to be used for any buffer...
+ * 
+ * Returns:
+ *     -1           processing error
+ *      0           nothing cleared
+ *      1+          # bytes cleared (matches len)
+ */
+int gfxutil_fb_clear(uint8_t * fb, size_t len, uint8_t fast_clean);
 
 /******************************************************************************
  * Simple framebuffer merge.

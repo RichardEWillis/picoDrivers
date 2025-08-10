@@ -113,10 +113,12 @@ static int linetest_step(void) {
 
 #if defined(DO_TEST_3) || defined(DO_TEST_4) || defined(DO_TEST_5)
   #include <textgfx.h>
+  #define INIT_TEXT_LAYER SET_FB_LAYER_FOREGROUND
 #endif
 #if defined(DO_TEST_7) || defined(DO_TEST_8)
   #include <textgfx.h>
   #include <linegfx.h>
+  #define INIT_GFX_LAYER SET_FB_LAYER_BACKGROUND
 #endif
 
 // This would normally be in 
@@ -126,8 +128,6 @@ int main() {
     uint8_t * gfb = 0; /* low level graphics framebuffer, owned by the driver itself */
     uint gfblen = 0;
     uint i = 0;
-
-
 
     // Enable UART so we can print
     stdio_init_all();
@@ -155,7 +155,7 @@ int main() {
     // Test # 1 "static snow"
     for ( i = 1 ; i < TEST_ITER_1 ; i++ ) {
         fb_noise(gfb, gfblen);
-        gfx_displayRefresh();
+        gfx_refreshDisplay(gfb); // cannot use: gfx_displayRefresh(); the layer compositor is not setup yet.
         sleep_ms(TEST_MSWAIT_1);
     }
 #endif
@@ -167,15 +167,23 @@ int main() {
     linetest_init();
     while ( linetest_step() == 0 )
     {
-        gfx_displayRefresh();
+        gfx_refreshDisplay(gfb); // cannot use: gfx_displayRefresh(); the layer compositor is not setup yet.
         sleep_ms(1);
     }
-    gfx_displayRefresh();
+    gfx_refreshDisplay(gfb); // cannot use: gfx_displayRefresh(); the layer compositor is not setup yet.
     sleep_s(TEST_SLEEP_2);
 #endif
 
     fb_clear();
-    gfx_displayRefresh(); // clear display
+    gfx_refreshDisplay(gfb); // cannot use: gfx_displayRefresh(); the layer compositor is not setup yet.
+
+    // Setup layers for all testing
+#ifdef INIT_TEXT_LAYER
+    text_init(INIT_TEXT_LAYER);
+#endif
+#ifdef INIT_GFX_LAYER
+    lgfx_init(INIT_GFX_LAYER);
+#endif
 
     // 20 x 8 text window
 #if (DO_TEST_3 == 1)
@@ -250,7 +258,6 @@ int main() {
             textgfx_putc(c);
         textgfx_refresh();
         textgfx_clear(); // next write to display should not have any fixed text rendered.
-        fb_clear();      // delete all data in the driver's framebuffer
         sleep_s(TEST_SLEEP_4);
     }
 #endif
@@ -369,7 +376,7 @@ int main() {
         #define MP_X    40
         #define MP_Y    20
         #define MP_STEP 4
-        lgfx_init(SET_FB_LAYER_FOREGROUND);
+
         lgfx_clear();
         textgfx_clear();
         if ( lgfx_box(BOX_X1,BOX_Y1,BOX_X2,BOX_Y2,COLOUR_BLK) ) {
@@ -405,6 +412,13 @@ int main() {
             textgfx_refresh();
         }
         sleep_s(TEST_SLEEP_7);
+        // overlay text on graphics - this assumes gpfx in backgound
+        // text should be readable (to do, fix with a text mask... txt framebufer x2 in size)
+        textgfx_set_refresh_mode(REFRESH_ON_TEXT_CHANGE);
+        textgfx_cursor(5,5);
+        textgfx_puts("TEXT ON GFX\n");
+        sleep_s(5);
+        textgfx_clear();
         lgfx_clear(); // clear the graphics buffer
         textgfx_refresh(); // update the screen
     }
@@ -426,7 +440,6 @@ int main() {
         #define GRPH_LEN    50
 
         sleep_s(1);
-        lgfx_init(SET_FB_LAYER_FOREGROUND); // harmless to call again if already init'd
         textgfx_clear();
         lgfx_clear(); 
         if ( lgfx_box(GBOX_X1,GBOX_Y1,GBOX_X2,GBOX_Y2,COLOUR_BLK) ) {

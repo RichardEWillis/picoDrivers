@@ -27,6 +27,26 @@
 #include <stdint.h>
 #include "pico/types.h"
 
+// Initialize the text layer. This is required BEFORE 
+// initializing either fixed or floating text buffers and 
+// prior to their own init functions.
+// Inputs:
+//  [uint8_t] layer_prio
+//                    Set text layer priority. This also affects
+//                    floating text buffers. Typical layer 
+//                    setting is SET_FB_LAYER_1 but this can
+//                    be changed to eg. put text in front of
+//                    other layers like linegfx.
+//                    range: {0 .. SET_FB_LAYER_FOREGROUND}
+//                    where 0 = SET_FB_LAYER_BACKGROUND.
+// Note: This call MUST BE CALLED prior to textgfx_init() or ftbgfx_init().
+// Returns:
+//  0 on success
+//  1 on some error.
+// ----------------------------------------------------------------------------
+int text_init(uint8_t layer_prio);
+
+
 // ----------------------------------------------------------------------------
 // --- Static Text Box API
 // ----------------------------------------------------------------------------
@@ -49,7 +69,6 @@
 #define SET_TEXTWRAP_ON         1
 // (set in textgfx_init() -> 'wrap')
 
-
 // -----------------------------------------------------------
 // (!) Normally, a return of 0 is success and +1 is an error.
 //     Exceptions to this are documented in affected function
@@ -59,16 +78,16 @@
 // Initialize the text buffer.
 // Mount the display driver before calling this function.
 // Inputs:
-//  [int] mode      determine when the display is refreshed
-//                  from the text buffer.
-//                  (REFRESH_ON_*)
-//                    0 := update screen after updating text 
-//                         buffer.
-//                    1 := only update screen on refresh()
-//  [int] wrap      auto-wrap text to the next line.
-//                  (SET_TEXTWRAP_*)
-//                    0 := no wrap
-//                    1 := wrap
+//  [int] mode        determine when the display is refreshed
+//                    from the text buffer.
+//                    (REFRESH_ON_*)
+//                      0 := update screen after updating text 
+//                           buffer.
+//                      1 := only update screen on refresh()
+//  [int] wrap        auto-wrap text to the next line.
+//                    (SET_TEXTWRAP_*)
+//                      0 := no wrap
+//                      1 := wrap
 // Note: This call is NOT required to invoke if only using
 //       floating text buffers, API further below in this 
 //       header.
@@ -145,7 +164,7 @@ int textgfx_refresh(void);
 #define FTB_TEXT_WRAP     1
 
 // Setup for floating text boxes prior to their use.
-void ftbgfx_init(void);
+int ftbgfx_init(void);
 
 // Return the drawspace extents of the mounted display driver
 // Does not require an open floating text box instance.
