@@ -1,45 +1,108 @@
+/******************************************************************************
+ * linegfx
+ * 
+ * Simple graphics primatives support. Refactored from ssd1309_linegfx.c.
+ * 
+ * Ver. 2.0
+ * 
+ * This version uses the gfxDriver Stack and so is more flexible to different
+ * graphics display sizes. 
+ * 
+ * Features:
+ *  - no longer tied to one display (SSD1309, 128x64 OLED)
+ *  - uses the gfx driver stack for access to the mounted graphics driver
+ *  - has its own buffer which renders into the driver's framebuffer.
+ * 
+ * Limitations:
+ *  - Still expects page type of graphics driver where 8 rows are encoded
+ *    into one page byte, LSB in the top row.
+ *  - only supports line drawing at this point.
+ * 
+ * InterOperation with Text Graphics
+ *  - Ver 2.0
+ *    - Text graphics is permanently set to Layer 1, Line Graphics can
+ *      only be set to Layer FOREGROUND as this time so it will always
+ *      be rendered on top of any text.
+ *    - Line graphics API does not have a refresh() call. Instead, use
+ *      the textgfx_refresh() function from textgfx.h
+ */
 
-#include "ssd1309_linegfx.h"
-#include "ssd1309_fb_private.h"
-#include "ssd1309_driver.h"
+#include <string.h>
+#include <stdlib.h>
+#include <linegfx.h>
+#include <gfxDriverLowPriv.h>
 
-static uint8_t gfx_linebuffer[FRAMEBUFFER_SIZE] = {0};
+// must now be initialized as the underlying gfx driver fb size is unknown 
+// until discovered in the new mounted driver.
+static uint8_t *   gfx_linebuffer = NULL;
+static size_t      gfx_bufferlen = 0;
+static int         gfx_fastcopy_enabled = 0;  // set to 'true' to allow fast copies in the framebuffer
+static size_t      drvr_screen_width = 0;
+static size_t      drvr_screen_height = 0;
+static size_t      drvr_screen_pages = 0;
 
-void lgfx_clearbuf(void) {
-    uint32_t   i = 0;
-#if (USE_FAST_FB_COPY==1)
-    uint32_t * fb32 = (uint32_t *)gfx_linebuffer;
-    uint32_t   fb32len = FRAMEBUFFER_SIZE / sizeof(uint32_t);
-    for ( i = 0 ; i < fb32len ; i++ )
-        fb32[i] = 0;
-#else
-    for ( i = 0 ; i < FRAMEBUFFER_SIZE ; i++ )
-        gfx_linebuffer[i] = 0;
-#endif
+// call after driver is mounted and started to get info
+// Returns:
+//  0 := ok
+//  1 := error (not mounted?)
+int lgfx_init(uint8_t layer_prio) {
+    int rc = 1;
+    if ( bsp_gfxDriverIsReady() ) {
+        if (gfx_linebuffer == NULL) {
+            drvr_screen_width  = gfx_getDispWidth();
+            drvr_screen_height = gfx_getDispHeight();
+            drvr_screen_pages  = gfx_getDispPageHeight();
+            gfx_bufferlen = (drvr_screen_pages * drvr_screen_width);
+            gfx_fastcopy_enabled = ( (gfx_bufferlen % 4) == 0 );
+            gfx_linebuffer = (uint8_t *)malloc(gfx_bufferlen);
+            gfx_setFrameBufferLayerPrio(gfx_linebuffer,layer_prio);
+            rc = (gfx_linebuffer == NULL); // remember, 0|false = gooood
+        } else {
+            rc = 0; // ignore a repeat call, already initialized.
+        }
+    }
+    return rc;
 }
 
-// called by the text renderer API to copy in any graphics 
-// FIRST into the main text framebuffer
-void lgfx_copy_buffer(uint8_t * tfb) {
-    uint32_t   i = 0;
-#if (USE_FAST_FB_COPY==1)
-    uint32_t * fb32 = (uint32_t *)gfx_linebuffer;
-    uint32_t * tfb32 = (uint32_t *)tfb;
-    uint32_t   fb32len = FRAMEBUFFER_SIZE / sizeof(uint32_t);
-    for ( i = 0 ; i < fb32len ; i++ )
-        tfb32[i] = fb32[i];
-#else
-    for ( i = 0 ; i < FRAMEBUFFER_SIZE ; i++ )
-        tfb[i] = gfx_linebuffer[i];
-#endif
+static void lgfx_clearbuf(void) {
+    if (gfx_linebuffer) {
+        uint32_t i = 0;
+        if (gfx_fastcopy_enabled) {
+            uint32_t * fb32 = (uint32_t *)gfx_linebuffer;
+            uint32_t   fb32len = gfx_bufferlen / sizeof(uint32_t);
+            for ( i = 0 ; i < fb32len ; i++ )
+                fb32[i] = 0;
+        } else {
+            for ( i = 0 ; i < gfx_bufferlen ; i++ )
+                gfx_linebuffer[i] = 0;
+        }
+    }
 }
+
+// // called by the text renderer API to copy in any graphics 
+// // FIRST into the main text framebuffer
+// void lgfx_copy_buffer(uint8_t * tfb) {
+//     uint32_t   i = 0;
+// #if (USE_FAST_FB_COPY==1)
+//     uint32_t * fb32 = (uint32_t *)gfx_linebuffer;
+//     uint32_t * tfb32 = (uint32_t *)tfb;
+//     uint32_t   fb32len = FRAMEBUFFER_SIZE / sizeof(uint32_t);
+//     for ( i = 0 ; i < fb32len ; i++ )
+//         tfb32[i] = fb32[i];
+// #else
+//     for ( i = 0 ; i < FRAMEBUFFER_SIZE ; i++ )
+//         tfb[i] = gfx_linebuffer[i];
+// #endif
+// }
+
+
 
 static int lgfx_plot(uint8_t x, uint8_t y, uint8_t c) {
     // plot pixel into the local frambuffer.
     uint8_t page = y >> 3;
     uint8_t n = y - (page << 3);
     uint8_t m = (1<< n);
-    uint32_t idx = (uint32_t)page * SSD1309_DISP_COLS + x;
+    uint32_t idx = (uint32_t)page * drvr_screen_width + x;
     if (c != COLOUR_WHT) {
         gfx_linebuffer[idx] |= m;
     } else {
@@ -55,7 +118,7 @@ static int lgfx_linex(uint8_t x, uint8_t y, uint8_t len, uint8_t c) {
         rc = lgfx_plot(x, y, c);
         x++;
         len --;
-        if (rc || x >= SSD1309_PIX_WIDTH)
+        if (rc || x >= drvr_screen_width)
             break;
     }
     return rc;
@@ -68,7 +131,7 @@ static int lgfx_liney(uint8_t x, uint8_t y, uint8_t len, uint8_t c) {
         rc = lgfx_plot(x, y, c);
         y++;
         len --;
-        if (rc || y >= SSD1309_PIX_HEIGHT)
+        if (rc || y >= drvr_screen_height)
             break;
     }
     return rc;
@@ -112,8 +175,8 @@ int lgfx_clear(void) {
 //      0 := OK, 1:= Error
 int lgfx_line(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2, uint8_t c) {
     int rc = 1;
-    if ((x1 < SSD1309_PIX_WIDTH) && (x2 < SSD1309_PIX_WIDTH) && 
-        (y1 < SSD1309_PIX_HEIGHT) && (y2 < SSD1309_PIX_HEIGHT) && 
+    if ((x1 < drvr_screen_width) && (x2 < drvr_screen_width) && 
+        (y1 < drvr_screen_height) && (y2 < drvr_screen_height) && 
         (c >= COLOUR_BLK) && (c <= COLOUR_WHT)) {
         int dx = (int)x2 - (int)x1;
         int dy = (int)y2 - (int)y1;
@@ -252,11 +315,11 @@ int lgfx_bgraph(uint8_t x, uint8_t y, uint8_t h, uint8_t len, uint8_t fill, uint
     // optimize this graph to make use of the underlying screen memory mapping
     // where pages are stacks of 8-bit columns in a horizontal row 128 elements 
     // wide.
-    if ((x+len < SSD1309_PIX_WIDTH) && (y+h < SSD1309_PIX_HEIGHT) && 
+    if ((x+len < drvr_screen_width) && (y+h < drvr_screen_height) && 
         (c >= COLOUR_BLK) && (c <= COLOUR_WHT) && (h > 0) && (len > 0)) {
         for (i=0 ; i<8 ; i++ ) {
             pi[i] = glb;
-            glb += SSD1309_PIX_WIDTH;
+            glb += drvr_screen_width;
             // work out the bit masks
             mpage[i] = 0;
             n = i << 3; //abs posn of topmost pixel in this page (range:0..63)
