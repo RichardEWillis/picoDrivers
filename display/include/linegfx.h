@@ -1,9 +1,30 @@
-/* Simple Line Graphics API 
- * Draw lines, arcs and circles.
- * Enclosed areas can be filled.
- * For the SSD1309 128x64 OLED Display
- * Note: this extends ssd1309_textbuffer when
- *       USE_LINE_GFX is defined at compile time.
+/******************************************************************************
+ * linegfx
+ * 
+ * Simple graphics primatives support. Refactored from ssd1309_linegfx.c.
+ * 
+ * Ver. 2.0
+ * 
+ * This version uses the gfxDriver Stack and so is more flexible to different
+ * graphics display sizes. 
+ * 
+ * Features:
+ *  - no longer tied to one display (SSD1309, 128x64 OLED)
+ *  - uses the gfx driver stack for access to the mounted graphics driver
+ *  - has its own buffer which renders into the driver's framebuffer.
+ * 
+ * Limitations:
+ *  - Still expects page type of graphics driver where 8 rows are encoded
+ *    into one page byte, LSB in the top row.
+ *  - only supports line drawing at this point.
+ * 
+ * InterOperation with Text Graphics
+ *  - Ver 2.0
+ *    - Text graphics is permanently set to Layer 1, Line Graphics can
+ *      only be set to Layer FOREGROUND as this time so it will always
+ *      be rendered on top of any text.
+ *    - Line graphics API does not have a refresh() call. Instead, use
+ *      the textgfx_refresh() function from textgfx.h
  */
 
 #ifndef __LINE_GRAPHICS_H__
@@ -32,6 +53,18 @@
 // note: clearing the screen sets the colour to all white.
 #define COLOUR_BLK  1   /* normal: will set piuxel as dark */
 #define COLOUR_WHT  2   /* normal: will set piuxel as light */
+
+// call after driver is mounted and started to get info.
+// Layer Priority:
+//  This is under development and will support multi-frame 
+//  buffer APIs in future. Refer to gfxDriverLow.h
+//  for layer definitions.
+//  At present, can only use SET_FB_LAYER_FOREGROUND
+//  (line graphics rendered AFTER text)
+// Returns:
+//  0 := ok
+//  1 := error (not mounted?)
+int lgfx_init(uint8_t layer_prio);
 
 // Arc Angles are defined in Deg. x 10 so the range is 
 //  {0 .. 3599} (0.0 - 359.9)

@@ -178,7 +178,6 @@ typedef union cabcdefg_u {
 #define C_SET_VCOMH_DL  0xDB                    /* Set Vcomh deselect level (contrast) */
 #define AA_VCOMH(x)     ((x & 0x0f) << 2)       /* (range 0..15) default: 13    */
 
-
 extern ca_u         CMD_SET_CONTRAST;           // change contrast value in aa
 extern c_u          CMD_DISP_RESUME_RAM;        // Disp opt. resume to RAM (A4h)
 extern c_u          CMD_DISP_ENT_ON;            // Disp opt. Entire Display On (A5h)
@@ -206,64 +205,5 @@ extern c_u          CMD_REMAP_COM_IS_DECR;      // COM scanned COM(n-1) .. COM0
   // command constructors (variable data)
 
 #define CMD_SET_CONTRAST(x) ca_u cmd={s.aa = x}
-
-/* --- API Calls ---------------------------------------------------------- */
-
-// This device driver does not use context handles. There is only
-// one connected device (simple driver).
-
-// Initialize parameters and systems in the driver without 
-// activating the display itself.
-//  gpio_dc     the GPIO respresenting the D/C state (output)
-//  gpio_res    the GPIO representing display reset (output)
-// Return: 0 := success
-int ssd1309drv_init(uint8_t gpio_dc, uint8_t gpio_res);
-
-// Initialize the display, prepare it for data frames.
-// Return: 0 := success
-int ssd1309drv_disp_init(void);
-
-// Send a command, outside of the API and existing init
-// Return: 0 := success
-int ssd1309drv_cmd(uint8_t * cmd, size_t cmdlen);
-
-// Disable display (turn off viewplane)
-// Return: 0 := success
-int ssd1309drv_disp_off(void);
-
-// enable display (show viewplane)
-// Return: 0 := success
-int ssd1309drv_disp_on(void);
-
-// Blank the display (clear RAM)
-// Return: 0 := success
-int ssd1309drv_disp_blank(void);
-
-// Send one full frame to the display memory, 1024 bytes for 
-// 128x64 pixels, Horizontal Addressing Mode.
-// Frame Format :
-//  PLANE0 - 0,1,2,3,4,5 ... 126,127  (128 octets per plane)
-//  PLANE1 - 0,1,2,3,4,5 ... 126,127
-//  ...
-//  PLANE7 - 0,1,2,3,4,5 ... 126,127
-//
-//  Each octet represents a vertical slice of 8 pixels with 
-//  the msb being the bottom-most pixel:
-//  Pixel orientation of data bits where 'pixel' := o.bm
-//  (Plane0, octets 0,1 ... 127):
-//  (top,left) 0.b0   1.b0 ... 127.b0
-//             0.b1   1.b1 ... 127.b1
-//             0.b2   1.b2 ... 127.b2
-//             0.b3   1.b3 ... 127.b3
-//             0.b4   1.b4 ... 127.b4
-//             0.b5   1.b5 ... 127.b5
-//             0.b6   1.b6 ... 127.b6
-//             0.b7   1.b7 ... 127.b7
-//  Plane1   128.b0 129.b0 ... 255.b0
-//           128.b1 129.b1 ... 255.b1
-//           ...              
-// send the frame contained in 'octets'. 'len' should always be 1024.
-// Return: 0 := success
-int ssd1309drv_disp_frame(uint8_t * octets, size_t len);
 
 #endif /* __SSD1309_DRIVER_H__ */
