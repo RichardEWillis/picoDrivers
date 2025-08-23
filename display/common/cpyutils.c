@@ -35,20 +35,29 @@ int gfxutil_fb_clear(uint8_t * fb, size_t len, uint8_t fast_clean) {
 
 // Simple framebuffer copy. uses a "fast copy" 
 // method when framebuffer sizes are compatible
-int gfxutil_fb_merge(uint8_t * from, uint8_t * to, size_t len) {
+int gfxutil_fb_merge(uint8_t * from, uint8_t * mask, uint8_t * to, size_t len) {
     int rc = -1;
     if (from && to && len) {
         if (len % 4 == 0) {
             uint32_t * f = (uint32_t *)from;
             uint32_t * t = (uint32_t *)to;
+            uint32_t * m = (uint32_t *)mask;
             size_t c = len / 4;
             size_t j;
-            for (j = 0 ; j < c ; j++)
+            for (j = 0 ; j < c ; j++) {
+                if (m) {
+                    t[j] &= (uint32_t)~(m[j]);
+                }
                 t[j] |= f[j];
+            }
         } else {
             size_t j;
-            for (j = 0 ; j < len ; j++)
+            for (j = 0 ; j < len ; j++) {
+                if (mask) {
+                    to[j] &= (uint8_t)~(mask[j]);
+                }
                 to[j] |= from[j];
+            }
         }
         rc = len;
     }

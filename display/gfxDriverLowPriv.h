@@ -89,11 +89,20 @@ extern void bsp_StopGfxDriver(void);
  * 
  */
 
+ #define FB_HAS_MASK 1  /* given framebuffer is double in size, latter half is a transparency mask */
+ #define FB_NO_MASK  0  /* given framebuffer is same size as the driver's and is just pixel data   */
 // Allows Graphics APIs to set a layer priority
+//
+// Inputs:
+//  fb              framebuffer, usually same size as the driver's buffer.
+//  prio            layer prio
+//  have_mask       If true, then the given fb is twice as long as expected 
+//                  and the second half will have the mask.
+//
 // Returns:
 //  0 := SUCCESS
 //  1 := Failed (leyer already configured?)
-int gfx_setFrameBufferLayerPrio(uint8_t * fb, uint8_t prio);
+int gfx_setFrameBufferLayerPrio(uint8_t * fb, uint8_t prio, uint8_t have_mask);
 
 // Call to assemble layers into the graphics driver framebuffer.
 // Note: for now, text owns the driver's framebuffer so higher

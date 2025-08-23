@@ -303,28 +303,38 @@ static const uint8_t font_5x7[] = {
 //	     layer compositing with layers set on 
 //		 initialization of each separate graphics
 //       system (text, lines, LEDS, etc.)
-static size_t txt_framebuffer_len = 0;
+// NEW - created frame buffer memory is twice the 
+//       size as normal. The second half of memory 
+//       is for a text mask. Set bits in the mask
+//       represent locations where the lower fb
+//       layers are zero'd prior to OR'ing the
+//       text fb in the compositor.
+static size_t txt_framebuffer_len = 0;	/* the ENTIRE size */
+static size_t fb_txt_seglen = 0;		/* the length of the text portion of 'txt_framebuffer' */
 static uint8_t * txt_framebuffer = NULL;
-static size_t fb_pix_cols = 0;        /* aka pixel width */
-static size_t fb_pix_height = 0;	  /* vertical pixel | row count */
-static size_t fb_page_count = 0;      /* number of vertical pages, 8 rows per page  */ 
-static uint8_t fb_fastcopy_enabled = 0;  /* if true then faster framebuffer operations are possible, eg. clear. */
+static uint8_t * txtmask_fb_start = 0;  /* location in txt_framebuffer where the text mask starts */
+static size_t fb_pix_cols = 0;          /* aka pixel width */
+static size_t fb_pix_height = 0;	    /* vertical pixel | row count */
+static size_t fb_page_count = 0;        /* number of vertical pages, 8 rows per page  */ 
+static uint8_t fb_fastcopy_enabled = 0; /* if true then faster framebuffer operations are possible, eg. clear. */
 
 // Start the text layer of graphics processing.
 int text_init(uint8_t layer_prio) {
 	int rc = 1;
 	if ( bsp_gfxDriverIsReady() ) {
 		if (txt_framebuffer == NULL) {
-			fb_pix_cols = g_llGfxDrvr->get_DispWidth();
+			fb_pix_cols   = g_llGfxDrvr->get_DispWidth();
 			fb_pix_height = g_llGfxDrvr->get_DispHeight();
 			fb_page_count = g_llGfxDrvr->get_DispPageHeight();
-			txt_framebuffer_len = (fb_pix_cols * fb_page_count);
-			fb_fastcopy_enabled = ( (txt_framebuffer_len % 4) == 0 );
+			fb_txt_seglen = (fb_pix_cols * fb_page_count);  // length for text rendering
+			txt_framebuffer_len = (fb_txt_seglen * 2);		// x2, for both text and mask data
+			fb_fastcopy_enabled = ( (fb_txt_seglen % 4) == 0 );
 			txt_framebuffer = (uint8_t *)malloc(txt_framebuffer_len);
 			if (txt_framebuffer) {
+				txtmask_fb_start = txt_framebuffer + fb_txt_seglen; // mask in the second half
 				gfxutil_fb_clear(txt_framebuffer, txt_framebuffer_len, fb_fastcopy_enabled);
 				// returns 0 on success.
-				rc = gfx_setFrameBufferLayerPrio(txt_framebuffer, layer_prio);
+				rc = gfx_setFrameBufferLayerPrio(txt_framebuffer, layer_prio, FB_HAS_MASK); // this one uses a mask
 			}
 		} else {
 			rc = 0; // already setup, ignore call.
@@ -404,6 +414,8 @@ static int textgfx_render(void) {
         const uint8_t * ftb = NULL;         // font buffer pointer, for the n cols of a character. points to leftmost col to start
         char * tb = &(text_buffer[0]);      // shorter alias 
         
+		// Delete the entire mask ? - test before adding code.
+
         for ( i = 0 ; i < textBufLen ; i++ ) {
             // for each character location in the text buffer ...
             if ( (i % char_width) == 0 ) {
@@ -415,10 +427,22 @@ static int textgfx_render(void) {
             // render character, by colunms
             ftb = &(font_5x7[(*tb) * FONT_W]); // 1st col. of the font char.
             for ( j = 0 ; j < FONT_W ; j++ ) {
-                txt_framebuffer[fptr++] = (*ftb) & 0x7F; // msb (bot of font) is blanked
+                txt_framebuffer[fptr] = (*ftb) & 0x7F; // msb (bot of font) is blanked
+				// if current text character is non-zero (zero is taken as "no character")
+				// then put in place the background mask, otherwise do not mask as there
+				// is _NO_ text at this location. If you want to mask, use a whitespace (0x20)
+				// character.
+				if (*tb) {
+					txtmask_fb_start[fptr] = 0xff;  // set mask for this character location, by vert. segments
+				}
+				fptr++;
                 ftb++; // next col in the font character
             }
-            txt_framebuffer[fptr++] = 0; // last col of the font is blank (vert. spacing)
+            txt_framebuffer[fptr] = 0; // last col of the font is blank (vert. spacing)
+			if (*tb) {
+				txtmask_fb_start[fptr] = 0xff; // blank is also masked!
+			}
+			fptr++;
             tb ++; // next char in the text buffer
         }
 

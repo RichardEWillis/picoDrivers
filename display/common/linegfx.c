@@ -58,7 +58,7 @@ int lgfx_init(uint8_t layer_prio) {
             gfx_linebuffer = (uint8_t *)malloc(gfx_bufferlen);
             if (gfx_linebuffer) {
                 gfxutil_fb_clear(gfx_linebuffer, gfx_bufferlen, gfx_fastcopy_enabled);
-                rc = gfx_setFrameBufferLayerPrio(gfx_linebuffer,layer_prio);
+                rc = gfx_setFrameBufferLayerPrio(gfx_linebuffer,layer_prio, FB_NO_MASK);
             }
         } else {
             rc = 0; // ignore a repeat call, already initialized.

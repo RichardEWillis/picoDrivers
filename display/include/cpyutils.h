@@ -44,8 +44,15 @@ int gfxutil_fb_clear(uint8_t * fb, size_t len, uint8_t fast_clean);
  * Simple framebuffer merge.
  * 
  * Both buffers must be 'len' bytes.
- * Buffer 'to' is logically OR'd with 'from' and saved to 'to' :
- *   to = to | from
+ * No Mask (mask == NULL):
+ *      Buffer 'to' is logically OR'd with 'from' and saved to 'to' :
+ *      to = to | from
+ * With Mask (mask != NULL):
+ *      Buffer 'to' is masked with 'mask' such that any bit location in the
+ *      mask set to '1' will mask out the pixel in 'to'; setting it to zero.
+ *      Then 'to' is OR'd with 'from'.
+ *      to = to & ~mask
+ *      to = to | from
  * 
  * If buffers are a multiple of 4 bytes then a "fast merge" algorithm is used 
  * instead.
@@ -55,7 +62,7 @@ int gfxutil_fb_clear(uint8_t * fb, size_t len, uint8_t fast_clean);
  *      0           nothing copied
  *      1+          # bytes merged from one fb to the other.
  */
-int gfxutil_fb_merge(uint8_t * from, uint8_t * to, size_t len);
+int gfxutil_fb_merge(uint8_t * from, uint8_t * mask, uint8_t * to, size_t len);
 
 // detailed info on source and destination framebuffers required for the copy.
 typedef struct fbdata_type {

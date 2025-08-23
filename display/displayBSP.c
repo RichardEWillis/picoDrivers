@@ -196,11 +196,12 @@ int gfx_refreshDisplay(const uint8_t * fb) {
 
 // Graphic Framebuffer Layer Priority Control
 // under construction and subject to change how this works.
-static uint8_t * fb_layers[FB_LAYER_COUNT] = {0};
+static uint8_t * fb_layers[FB_LAYER_COUNT] = {0};   // pointer to frame buffers
+static uint8_t * fb_mask[FB_LAYER_COUNT] = {0};     // if a layer has a mask then it will be set here.
 static int       gfx_fb_can_optimize = -1; // do a optimization check once and either set(1) or clear (0) this for future checks.
 
 // Call this method anyways even if it does nothing right now.
-int gfx_setFrameBufferLayerPrio(uint8_t * fb, uint8_t prio) {
+int gfx_setFrameBufferLayerPrio(uint8_t * fb, uint8_t prio, uint8_t have_mask) {
     int rc = 1;
     // if ( g_llGfxDrvrPriv && !fb_layers[SET_FB_LAYER_1] ) {
     //     // driver ready, if not already done, pre-assign the
@@ -210,6 +211,13 @@ int gfx_setFrameBufferLayerPrio(uint8_t * fb, uint8_t prio) {
     if (fb && (prio < FB_LAYER_COUNT)) {
         if ( !fb_layers[prio] ) {
             fb_layers[prio] = fb;
+            if (have_mask) {
+                size_t offset = g_llGfxDrvr->get_FBSize();
+                // mask is in the second half of the buffer
+                fb_mask[prio] = fb + offset;
+            } else {
+                fb_mask[prio] = NULL;
+            }
             rc = 0;
         }
     }
@@ -233,7 +241,7 @@ int gfx_fb_compositor(void) {
         gfxutil_fb_clear(drvr_fb, fblen, gfx_fb_can_optimize);
         for (i = SET_FB_LAYER_BACKGROUND ; i < FB_LAYER_COUNT ; i++ ) {
             if (fb_layers[i]) {
-                gfxutil_fb_merge(fb_layers[i], drvr_fb, fblen);
+                gfxutil_fb_merge(fb_layers[i], fb_mask[i], drvr_fb, fblen);
             }
         }
     }
