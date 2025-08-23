@@ -260,9 +260,18 @@ int ftbgfx_newline(void * ftbhnd);
 int ftbgfx_bkspace(void * ftbhnd);
 
 // Manually refresh the display with the current floating text buffer contents.
+// (!) THIS WILL WIPE OUT OTHER FTB INSTANCES!
+//     Use this only when one FTB is being used.
+//     The rendering process has to refresh the text framebuffer
+//     first from the static text. During this process, any previously
+//     updated FTBs will get wiped from the framebuffer.
+//     When using multiple FTBs, refresh them only using
+//     ftbgfx_refresh_all().
 int ftbgfx_refresh(void * ftbhnd);
 
 // Refresh all open floating text boxes. Does not require a handle.
+// THis is safer to use as it ensure all active FTBs get rendered
+// into a fresh framebuffer, only with existing static text.
 int ftbgfx_refresh_all(void);
 
 #endif /* __TEXTGFX_H__ */

@@ -99,6 +99,22 @@ int lgfx_line(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2, uint8_t c);
 //      0 := OK, 1:= Error
 int lgfx_box(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2, uint8_t c);
 
+// Draw a filled box from (x1,y1) to (x2,y2)
+//
+// Same as lgfx_box() except all pixels within it are set to the 
+// line colour.
+//
+//  Inputs: (x1,y1) starting coords
+//          (x2,y2) ending coords
+//          c       colour (see COLOUR_***)
+//  Limits:
+//          x   {0 .. 127}
+//          y   {0 .. 63}
+//          c   COLOUR_BLK | COLOUR_WHT
+//  Returns,
+//      0 := OK, 1:= Error
+int lgfx_filled_box(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2, uint8_t c);
+
 // Draw an Arc
 //  Inputs: (cx,cy)     centre of the arc
 //          r           radius (pixels)

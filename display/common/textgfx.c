@@ -635,8 +635,9 @@ int textgfx_refresh(void) {
 
 // ----------------------------------------------------------------------------
 // --- Floating Text Box API
-// --- Ver 2.0 : can use FTB, static text layer or both. FTB is no longer
+// --- Ver 2.1 : can use FTB, static text layer or both. FTB is no longer
 // ---           dependent on the static text system.
+// --- (2.1)     adding text masks which add to the text framebuffer's mask.
 // ----------------------------------------------------------------------------
 
 static uint8_t ftb_initialized = 0;
@@ -668,6 +669,7 @@ static void ftb_render(ftbgfx_p pftb, int do_writeFB) {
 
         // upper and lower column bit masks.. where the font col will be added in the FB 
         // upper and lower pages (fbi, fbn)
+		// (v2.1) these are also use for the text framebuffer's mask buffer.
         uint8_t um = 0xff << n; // mask for upper page. '1' indicates a font bit location
         uint8_t lm = 0xff >> (8-n); // mask for lower page, if needed.
         
@@ -714,8 +716,16 @@ static void ftb_render(ftbgfx_p pftb, int do_writeFB) {
                         // for now, wipe the framebuffer pixels underneath the text box.. 
                         // ignore 'transparent mode'
                         frame_buffer[fbi] &= (uint8_t)~(um);
-                        if (n > 0 && fbn < FB_BUF_LEN) // pages aligned or outside of FB ?
+						// update fb mask (upper mask bits)
+						// note: fb is twice the required length. 2nd half is the mask.
+						//       fb_txt_seglen is the fb text length, eg. 1024 octets
+						//       so it will point to the corresponding mask when added to
+						//       the fb txt portion index 'fbi'
+						frame_buffer[fb_txt_seglen + fbi] |= um;
+                        if (n > 0 && fbn < FB_BUF_LEN) { // pages aligned or outside of FB ?
                             frame_buffer[fbn] &= (uint8_t)~(lm);
+							frame_buffer[fb_txt_seglen + fbn] |= lm;
+						}
                         // transfer text font, col-by-col (5-valid cols)
                         if (col > 0) {  // 1..5 are rendered from the font character columns. 0 is a blank row
                             frame_buffer[fbi] |= ((*fcol & 0x7F) << n); // bot pixels blanked, row separator
@@ -998,13 +1008,30 @@ int ftbgfx_bkspace(void * ftbhnd) {
 int ftbgfx_refresh(void * ftbhnd) {
     ftbgfx_p phndl = validate_vptr(ftbhnd);
     if (phndl) {
+		// USE WITH CAUTION - OTHER FTBs ALREADY RENDERED WILL BE DELETED
+		// Update the text graphic framebuffer with the current contents
+		// of the static framebuffer.
+		gfxutil_fb_clear(txt_framebuffer, txt_framebuffer_len, fb_fastcopy_enabled);
+		textgfx_render(); 
 		ftb_render(phndl,DO_WRITE_FB); 
     }
     return (phndl) ? 0 : 1;
 }
 
 int ftbgfx_refresh_all(void) {
+	// Update the text graphic framebuffer with the current contents
+	// of the static framebuffer. This acts to ensure a moving FTB does not corrupt
+	// underlying static text already rendered...
+	// eg. this will not work:
+	//		update static txt --> render txt --> txt_framebuffer
+	//		move FTB --> render text ----------> txt_framebuffer
+	//		move FTB --> render text ----------> txt_framebuffer (!) FB now has the old text box still in it
+	gfxutil_fb_clear(txt_framebuffer, txt_framebuffer_len, fb_fastcopy_enabled);
+	textgfx_render(); 
 	render_floating_txt_tables();
     return 0;
 }
+
+
+
 

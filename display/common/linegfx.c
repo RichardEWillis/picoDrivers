@@ -251,6 +251,26 @@ int lgfx_box(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2, uint8_t c) {
     return rc;
 }
 
+int lgfx_filled_box(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2, uint8_t c) {
+    int rc = lgfx_box(x1, y1, x2, y2, c);
+    if (!rc) {
+        size_t i;
+        uint8_t ya = y1;
+        uint8_t yb = y2;
+        if (yb < ya) {
+            ya = y2;
+            yb = y1;
+        }
+        for (i = ya+1 ; i < yb ; i++) {
+            rc = lgfx_line(x1,i,x2,i,c);
+            if (rc) {
+                break;
+            }
+        }
+    }
+    return rc;
+}
+
 // Draw an Arc
 //  Inputs: (cx,cy)     centre of the arc
 //          r           radius (pixels)

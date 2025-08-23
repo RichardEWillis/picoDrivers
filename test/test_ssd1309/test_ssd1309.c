@@ -91,6 +91,7 @@ static int linetest_step(void) {
 #define DO_TEST_6       1  /* floating text boxes - moving      */
 #define DO_TEST_7       1  /* line graphics - lines             */
 #define DO_TEST_8       1  /* line graphics - bar graph         */
+#define DO_TEST_9       1  /* floating text box over bkgnd gfx  */
 
 #define TEST_SLEEP_SHRT 1
 #define TEST_SLEEP_MED  3
@@ -109,6 +110,7 @@ static int linetest_step(void) {
 #define TEST_SLEEP_7    1
 #define TEST_MSWAIT_8   40
 #define TEST_SLEEP_8    5
+#define TEST_SLEEP_9    3
 #define TEST_END_SLEEP  10
 
 #if defined(DO_TEST_3) || defined(DO_TEST_4) || defined(DO_TEST_5)
@@ -121,7 +123,65 @@ static int linetest_step(void) {
   #define INIT_GFX_LAYER SET_FB_LAYER_BACKGROUND
 #endif
 
-// This would normally be in 
+// Common Subroutines
+
+void test_moving_textbox(void) {
+    uint32_t nc = 0; // counts without bounds.
+    uint32_t i = nc % 12; // {0..11} bounded
+    uint32_t j = 0;
+    uint8_t  xp = 0;
+    uint8_t  yp = 0;
+    uint8_t  mphase = 0; // 0 := diag x++,y++, 1 := lin x++, 2 := diag x--,y--, 3 := lin x--
+    void * ft2 = ftbgfx_new(xp, yp, 6, 2, FTB_BKGRND_OPAQUE, FTB_TEXT_WRAP, FTB_SCALE_1);
+    const char tbc[] = "0123456789AB";
+
+    if (!ft2) {
+        printf("Error [test_moving_textbox] ftbgfx_new()\n");   
+        trap_error();
+    }
+    ftbgfx_enable(ft2);
+    do {
+        i = nc % 12; // text start index
+        ftbgfx_clear(ft2); // clear out old text
+        //ftbgfx_refresh(ft2); // write clear txt buf to framebuffer to prevent "smear effect" when moving the txt box
+        ftbgfx_move(ft2,xp,yp);
+        for (j = 0 ; j < 12 ; j++) {
+            i = (i+j) % 12;
+            ftbgfx_putc(ft2, tbc[i]);
+        }
+        ftbgfx_refresh(ft2); // display new box
+        if ((nc % 12) == 11) {
+            mphase ++;
+            if (mphase >= 4) {
+                mphase = 0;
+            }
+        }
+        // move the box around on a diamond path
+        switch(mphase) {
+        case 0:
+            xp ++; yp ++;
+            break;
+        case 1:
+            xp ++;
+            break;
+        case 2:
+            if (xp) xp --;
+            if (yp) yp --;
+            break;
+        case 3:
+        default:
+            if (xp) xp --;
+        }
+        nc ++;
+        sleep_ms(TEST_MSWAIT_6);
+    } while (nc < TEST_ITER_6);
+    sleep_s(TEST_SLEEP_6);
+    ftbgfx_disable(ft2);
+    sleep_s(TEST_SLEEP_6);
+    ftbgfx_delete(ft2);
+}
+
+// =================== MAIN TEST LOOP =========================================
 
 int main() {
     const char * pstrn = 0;
@@ -310,57 +370,7 @@ int main() {
 
 #if (DO_TEST_6 == 1)
     {
-        uint32_t nc = 0; // counts without bounds.
-        uint32_t i = nc % 12; // {0..11} bounded
-        uint32_t j = 0;
-        uint8_t  xp = 0;
-        uint8_t  yp = 0;
-        uint8_t  mphase = 0; // 0 := diag x++,y++, 1 := lin x++, 2 := diag x--,y--, 3 := lin x--
-        void * ft2 = ftbgfx_new(xp, yp, 6, 2, FTB_BKGRND_OPAQUE, FTB_TEXT_WRAP, FTB_SCALE_1);
-        const char tbc[] = "0123456789AB";
-
-        if (!ft2) {
-            printf("Error [TEST6] ftbgfx_new()\n");   
-            trap_error();
-        }
-        ftbgfx_enable(ft2);
-        do {
-            i = nc % 12; // text start index
-            ftbgfx_clear(ft2); // clear out old text
-            ftbgfx_refresh(ft2); // write clear txt buf to framebuffer to prevent "smear effect" when moving the txt box
-            ftbgfx_move(ft2,xp,yp);
-            for (j = 0 ; j < 12 ; j++) {
-                i = (i+j) % 12;
-                ftbgfx_putc(ft2, tbc[i]);
-            }
-            ftbgfx_refresh(ft2); // display new box
-            if ((nc % 12) == 11) {
-                mphase ++;
-                if (mphase >= 4) {
-                    mphase = 0;
-                }
-            }
-            // move the box around on a diamond path
-            switch(mphase) {
-            case 0:
-                xp ++; yp ++;
-                break;
-            case 1:
-                xp ++;
-                break;
-            case 2:
-                if (xp) xp --;
-                if (yp) yp --;
-                break;
-            case 3:
-            default:
-                if (xp) xp --;
-            }
-            nc ++;
-            sleep_ms(TEST_MSWAIT_6);
-        } while (nc < TEST_ITER_6);
-        ftbgfx_disable(ft2);
-        sleep_s(TEST_SLEEP_6);
+        test_moving_textbox();
     }
 #endif
 
@@ -454,6 +464,28 @@ int main() {
             textgfx_refresh();
             sleep_ms(TEST_MSWAIT_8);
         }
+        sleep_s(2);
+    }
+#endif
+
+#ifdef DO_TEST_9
+    {
+        #define FBOX_X1  0
+        #define FBOX_Y1  0
+        #define FBOX_X2  32
+        #define FBOX_Y2  16
+
+        lgfx_clear();
+        textgfx_clear();
+        if ( lgfx_filled_box(FBOX_X1,FBOX_Y1,FBOX_X2,FBOX_Y2,COLOUR_BLK) ) {
+            printf("Error [TEST9] lgfx_filled_box()\n");   
+            trap_error();
+        }
+        textgfx_refresh();
+        sleep_s(1);
+        // do the same moving box test - moved to a subroutine.
+        test_moving_textbox();
+        sleep_s(2);
     }
 #endif
 
