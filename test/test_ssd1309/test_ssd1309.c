@@ -92,6 +92,7 @@ static int linetest_step(void) {
 #define DO_TEST_7       1  /* line graphics - lines             */
 #define DO_TEST_8       1  /* line graphics - bar graph         */
 #define DO_TEST_9       1  /* floating text box over bkgnd gfx  */
+#define DO_TEST_10      1  /* Large 7-Segment LED Digits        */
 
 #define TEST_SLEEP_SHRT 1
 #define TEST_SLEEP_MED  3
@@ -111,6 +112,7 @@ static int linetest_step(void) {
 #define TEST_MSWAIT_8   40
 #define TEST_SLEEP_8    5
 #define TEST_SLEEP_9    3
+#define TEST_SLEEP_10   3
 #define TEST_END_SLEEP  10
 
 #if defined(DO_TEST_3) || defined(DO_TEST_4) || defined(DO_TEST_5)
@@ -121,6 +123,10 @@ static int linetest_step(void) {
   #include <textgfx.h>
   #include <linegfx.h>
   #define INIT_GFX_LAYER SET_FB_LAYER_BACKGROUND
+#endif
+#if defined(DO_TEST_10)
+  #include <led_overlay.h>
+  #define INIT_LED_LAYER SET_FB_LAYER_2
 #endif
 
 // Common Subroutines
@@ -486,55 +492,49 @@ int main() {
         // do the same moving box test - moved to a subroutine.
         test_moving_textbox();
         sleep_s(2);
+
+        lgfx_clear();
+        textgfx_clear();
     }
 #endif
 
-#ifdef LED_OVERLAY
+#ifdef DO_TEST_10
     #define LED_XPOS 3
     #define LED_YPOS 3
     #define LED_DIGCOUNT 3
     #define LED_INITVAL 0
     #define LED_REFRESH_ON_UPDATE 1
     {
-        fb_clear();
-        ssd1309drv_disp_frame(&(framebuf[0]), FRAMEBUFFER_SIZE); // clear display
+        size_t i;
 
+        if ( led0_init(INIT_LED_LAYER) ) {
+            printf("Error [LED_OVERLAY] led0_init()\n");   
+            trap_error();
+        }
         void * ledctx = ledo_open(LED_XPOS, LED_YPOS, LED_DIGCOUNT, LED_INITVAL, LED_REFRESH_ON_UPDATE);
         if ( ! ledctx ) {
             printf("Error [LED_OVERLAY] ledo_open()\n");   
             trap_error();
         }
-        ssd1309drv_disp_frame(&(framebuf[0]), FRAMEBUFFER_SIZE); // clear display
-        sleep_s(1);
-        if ( ledo_update(ledctx, 123) ) {
-            printf("Error [LED_OVERLAY] ledo_update(123)\n");   
-            trap_error();
+        for (i = 0 ; i < 101 ; i++) {
+            if ( ledo_update(ledctx, i) ) {
+                printf("Error [LED_OVERLAY] ledo_update(+1)(%lu)\n", i);   
+                trap_error();
+            }
+            sleep_ms(40);               
         }
-        ssd1309drv_disp_frame(&(framebuf[0]), FRAMEBUFFER_SIZE); // clear display
-        sleep_s(1);
-        if ( ledo_update(ledctx, 42) ) {
-            printf("Error [LED_OVERLAY] ledo_update(42)\n");   
-            trap_error();
+        for (i = 150 ; i < 1000 ; i += 50) {
+            if ( ledo_update(ledctx, i) ) {
+                printf("Error [LED_OVERLAY] ledo_update(+50)(%lu)\n", i);   
+                trap_error();
+            }
+            sleep_ms(40);               
         }
-        ssd1309drv_disp_frame(&(framebuf[0]), FRAMEBUFFER_SIZE); // clear display
-        sleep_s(1);
-        if ( ledo_update(ledctx, 9) ) {
-            printf("Error [LED_OVERLAY] ledo_update(9)\n");   
-            trap_error();
-        }
-        ssd1309drv_disp_frame(&(framebuf[0]), FRAMEBUFFER_SIZE); // clear display
-        sleep_s(1);
-        if ( ledo_update(ledctx, 0) ) {
-            printf("Error [LED_OVERLAY] ledo_update(0)\n");   
-            trap_error();
-        }
-        ssd1309drv_disp_frame(&(framebuf[0]), FRAMEBUFFER_SIZE); // clear display
         sleep_s(1);
         if ( ledo_refresh(ledctx) ) {
             printf("Error [LED_OVERLAY] ledo_refresh()\n");   
             trap_error();
         }
-        ssd1309drv_disp_frame(&(framebuf[0]), FRAMEBUFFER_SIZE); // clear display
         sleep_s(1);
         ledo_close(&ledctx);
         if ( ledctx ) {

@@ -1,41 +1,74 @@
-
-/* add more diplay options as they are created */
-#ifdef LED_OVERLAY
+/******************************************************************************
+ * led_overlay
+ * 
+ * A large numeric LED display for any screen that is Sized 
+ * (X, Y) pixels or larger.
+ * 
+ * Ver. 2.0
+ * 
+ * This version uses the gfxDriver Stack and so is more flexible to different
+ * graphics display sizes. 
+ * 
+ * Features:
+ *  - One to three 7-segment digits to support (0-9).
+ *  - API decodes an unsigned integer to generate the n digits, range limited
+ *    upon the number of digits, eg. 2 digit setup supports 0 .. 99 range.
+ *  - has its own buffer which renders into the driver's framebuffer.
+ *  - supports the new graphics layers
+ * 
+ * Limitations:
+ *  - No support for A..F on the digits
+ * 
+ */
 
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
-#if defined(DISP_SSD1309)
-  #include <ssd1309_driver.h>
-  extern uint8_t * framebuf; /* or whatever its called */
-//  #define GBUFFER framebuf
-  #define FRAMEBUF_P_WIDTH  128
-  #define FRAMEBUF_P_HEIGHT 64
-  #define FRAMEBUF_PAGES    8
-  #define FRAMEBUF_LINES_PER_PG (FRAMEBUF_P_HEIGHT / FRAMEBUF_PAGES)
-  #define FRAMEBUF_LEN      (FRAMEBUF_PAGES * FRAMEBUF_P_WIDTH) /* in bytes */
-#endif
 #include <led_overlay.h>
+#include <cpyutils.h>
+#include <gfxDriverLowPriv.h>
 
-#define DIGIT_HEIGHT 32
-#define DIGIT_PGHGT  (DIGIT_HEIGHT / FRAMEBUF_LINES_PER_PG)
+// must now be initialized as the underlying gfx driver fb size is unknown 
+// until discovered in the new mounted driver.
+static uint8_t *   led_linebuffer = NULL;
+static size_t      led_bufferlen = 0;
+static int         led_fastcopy_enabled = 0;  // set to 'true' to allow fast copies in the framebuffer
+static size_t      drvr_screen_width = 0;
+static size_t      drvr_screen_height = 0;
+static size_t      drvr_screen_pages = 0;
+static size_t  FRAMEBUF_LINES_PER_PG = 0; // TBD from driver
 #define DIGIT_WIDTH  17
+#define DIGIT_HEIGHT 32
+#define DIGIT_PGHGT  4   // must be const as the digits are already in a ROM bitmap
+#define DIGIT_BUFLEN (DIGIT_WIDTH * DIGIT_PGHGT)
 #define DIGIT_SPACE  2
-
 #define MAX_DIGITS   3
 #define MIN_POS      0
-#define MAX_X_POS    ((FRAMEBUF_P_WIDTH-1) - (MAX_DIGITS * DIGIT_WIDTH) - ((MAX_DIGITS-2) * DIGIT_SPACE))
-#define MAX_Y_POS    ((FRAMEBUF_P_HEIGHT-1) - DIGIT_HEIGHT)
-
+static size_t      MAX_X_POS = 0; // TBD from driver
+static size_t      MAX_Y_POS = 0; // TBD from driver
 #define MAXVAL_1DIG  9
 #define MAXVAL_2DIG  99
 #define MAXVAL_3DIG  999
 #define MAXVAL_4DIG  9999
-
 #define BLANK_DIGIT_IDX 0xf     /* set this value in ctx.dval[n] to blank digit n */
 #define CTX_WMARK    0x4C45444F
+//static size_t        DIGIT_BUFLEN = 0; // TBD from driver
 
-#define DIGIT_BUFLEN (DIGIT_PGHGT * DIGIT_WIDTH)
+// #if defined(DISP_SSD1309)
+//   #include <ssd1309_driver.h>
+//   extern uint8_t * framebuf; /* or whatever its called */
+// //  #define GBUFFER framebuf
+//   #define FRAMEBUF_P_WIDTH  128
+//   #define FRAMEBUF_P_HEIGHT 64
+//   #define FRAMEBUF_PAGES    8
+//   #define FRAMEBUF_LINES_PER_PG (FRAMEBUF_P_HEIGHT / FRAMEBUF_PAGES)
+//   #define FRAMEBUF_LEN      (FRAMEBUF_PAGES * FRAMEBUF_P_WIDTH) /* in bytes */
+// #endif
+// #include <led_overlay.h>
+//#define DIGIT_PGHGT  (DIGIT_HEIGHT / FRAMEBUF_LINES_PER_PG)
+//#define MAX_X_POS    ((FRAMEBUF_P_WIDTH-1) - (MAX_DIGITS * DIGIT_WIDTH) - ((MAX_DIGITS-2) * DIGIT_SPACE))
+//#define MAX_Y_POS    ((FRAMEBUF_P_HEIGHT-1) - DIGIT_HEIGHT)
+//#define DIGIT_BUFLEN (DIGIT_PGHGT * DIGIT_WIDTH)
 
 /* digit is blanked */
 static const uint8_t bmap_dig_blank[DIGIT_BUFLEN] = {
@@ -123,46 +156,37 @@ typedef struct led_ctx_type {
     uint8_t  filler;
 } led_ctx_t;
 
-// given a digit index into bmaps[], copy it into the framebuffer GBUFFER[]
-// at the indicated pixel location, top-left corner
-static void digit_render(uint8_t xpos, uint8_t ypos, uint8_t dig) {
-    uint8_t  fb_page  = ypos / FRAMEBUF_LINES_PER_PG;
-    uint8_t  n        = ypos % FRAMEBUF_LINES_PER_PG; // line-misalignment in no. of bits. 0 := aligned
-    uint8_t  fbmask   = 0xff >> (8 - n); // for retaining existing framebuffer data (shifted digit location)
-    uint8_t  fbmasknxt= 0xff << n;       // mask for the next page down, if shifted.
-    uint8_t  bmidx    = 0; // index into digit bitmap (0..51)
-    uint8_t  digwidth = 0; // prevent a molulo compute by monitoring the X position rel to the width of the digit to find rollover point into the next FB page.
-    uint32_t fb_start = (fb_page * FRAMEBUF_P_WIDTH) + xpos; // starting index into FB (by page)
-    const uint8_t * bm = (dig == BLANK_DIGIT_IDX) ? bmaps[0] : bmaps[dig+1];
-    
-    while (bmidx < DIGIT_BUFLEN) {
-        framebuf[fb_start] = (framebuf[fb_start] & fbmask) | (bm[bmidx] << n);
-        if (n && (fb_start + FRAMEBUF_P_WIDTH) < FRAMEBUF_LEN) {
-            // for shifted copies,
-            // render remaining part of the display digit into the next page below,
-            // as long as it is still within the framebuffer
-            framebuf[fb_start+FRAMEBUF_P_WIDTH] = 
-                (framebuf[fb_start+FRAMEBUF_P_WIDTH] & fbmasknxt) | (bm[bmidx] >> (8-n));
-        }
-        fb_start ++;
-        bmidx ++;
-        digwidth ++;
-        if (digwidth >= DIGIT_WIDTH) {
-            // re-calulate FB page and index posn for next page
-            //fb_page ++;
-            fb_start += FRAMEBUF_P_WIDTH;
-            digwidth = 0;
+// Sessions now a static array size. Right now just limit it to 1.
+#ifndef MAX_LEDO_SESSIONS
+  #define MAX_LEDO_SESSIONS 1
+#endif
+static led_ctx_t led_session[MAX_LEDO_SESSIONS] = {0};
+
+static led_ctx_t * get_session(void) {
+    led_ctx_t * sess = NULL;
+    size_t i;
+
+    if (!led_linebuffer) {
+        return NULL; // not initialized yet.
+    }
+
+    for (i = 0 ; i < MAX_LEDO_SESSIONS ; i++) {
+        if (led_session[i].sessionid == 0) {
+            led_session[i].watermark = CTX_WMARK;
+            led_session[i].sessionid = g_sessionGenerator++;
+            sess = &(led_session[i]);
+            break;
         }
     }
+
+    return sess;
 }
 
-// given a digit index (0-9,BLANK_DIGIT_IDX) update it in framebuffer GBUFFER[]
-// at the indicated pixel location, top-left corner
-// Note: this will erase previous bitmap. Use this method to updated the digit.
-static void digit_write(uint8_t xpos, uint8_t ypos, uint8_t dig) {
-    digit_render(xpos,ypos,BLANK_DIGIT_IDX);
-    if (dig < BLANK_DIGIT_IDX)
-        digit_render(xpos,ypos,dig);
+static void return_session(led_ctx_t * s) {
+    if (s && s->watermark == CTX_WMARK) {
+        s->watermark = 0;
+        s->sessionid = 0;
+    }
 }
 
 static void fill_digits(uint8_t * dval, uint8_t dcount, uint32_t val) {
@@ -189,8 +213,50 @@ static void fill_digits(uint8_t * dval, uint8_t dcount, uint32_t val) {
     }
 }
 
+// First called to setup geometry after the graphics driver is loaded.
+// Inputs:
+//  [uint8_t]  layer_prio       establish layer priority:
+//                              SET_FB_LAYER_BACKGROUND is first/lowest
+//                              layer and is composited first.
+// Returns:
+//  0 := success
+//  1 := error (gfx driver is loaded? )
+int led0_init(uint8_t layer_prio) {
+    int rc = 1;
+    if ( bsp_gfxDriverIsReady() ) {
+        if ( !led_linebuffer ) {
+            drvr_screen_width  = gfx_getDispWidth();
+            drvr_screen_height = gfx_getDispHeight();
+            drvr_screen_pages  = gfx_getDispPageHeight();
+            led_bufferlen = (drvr_screen_pages * drvr_screen_width);
+            led_fastcopy_enabled = ( (led_bufferlen % 4) == 0 );
+            led_linebuffer = (uint8_t *)malloc(led_bufferlen);
+            if (led_linebuffer) {
+                gfxutil_fb_clear(led_linebuffer, led_bufferlen, led_fastcopy_enabled);
+                rc = gfx_setFrameBufferLayerPrio(led_linebuffer,layer_prio, FB_NO_MASK);
+                if (rc == EXIT_SUCCESS) {
+                    size_t i;
+                    FRAMEBUF_LINES_PER_PG = (drvr_screen_height / drvr_screen_pages);
+                    MAX_X_POS = ((drvr_screen_width-1) - (MAX_DIGITS * DIGIT_WIDTH) - ((MAX_DIGITS-2) * DIGIT_SPACE));
+                    MAX_Y_POS = ((drvr_screen_height-1) - DIGIT_HEIGHT);
+                    //DIGIT_BUFLEN = (DIGIT_PGHGT * DIGIT_WIDTH); - just render into the 1K framebuffer, compatible with new compositor layering
+                    for (i = 0 ; i < MAX_LEDO_SESSIONS ; i++) {
+                        memset( led_session+i, 0, sizeof(led_ctx_t) );
+                    }
+                }
+            }
+        } 
+    }
+    return rc;
+}
+
 void * ledo_open(uint8_t xPos, uint8_t yPos, uint8_t digCount, int initValue, uint8_t onUpdate) {
     led_ctx_t * ctx = 0;
+    
+    if (!led_linebuffer) {
+        return NULL; // not initialized yet.
+    }
+
     /* test ranges */
     if ((xPos < MAX_X_POS) && (yPos < MAX_Y_POS) && 
         digCount && (digCount <= MAX_DIGITS)) {
@@ -204,11 +270,8 @@ void * ledo_open(uint8_t xPos, uint8_t yPos, uint8_t digCount, int initValue, ui
         if (initValue > value) {
             initValue = value;
         }
-        ctx = (led_ctx_t *)malloc(sizeof(led_ctx_t));
+        ctx = get_session();
         if (ctx) {
-            memset(ctx,0,sizeof(led_ctx_t));
-            ctx->watermark = CTX_WMARK; /* "LEDO" */
-            ctx->sessionid = g_sessionGenerator ++;
             ctx->xpos = xPos;
             ctx->ypos = yPos;
             ctx->diglen = digCount;
@@ -229,10 +292,38 @@ void * ledo_open(uint8_t xPos, uint8_t yPos, uint8_t digCount, int initValue, ui
     return (void *)ctx;
 }
 
+// given a digit index into bmaps[], copy it into the framebuffer GBUFFER[]
+// at the indicated pixel location, top-left corner
+static int digit_render(uint8_t xpos, uint8_t ypos, uint8_t dig) {
+    int rc = 1;
+    if (led_linebuffer) {
+        const uint8_t * bm = (dig == BLANK_DIGIT_IDX) ? bmaps[0] : bmaps[dig+1];
+        rc = gfxutil_blit(bm, DIGIT_WIDTH, DIGIT_PGHGT, true, xpos, ypos, 
+            led_linebuffer, drvr_screen_width, drvr_screen_pages);
+    }
+    return rc;
+}
+
+// TO-DO : probably will remove this function and directly call digit_render()
+//
+// given a digit index (0-9,BLANK_DIGIT_IDX) update it in framebuffer GBUFFER[]
+// at the indicated pixel location, top-left corner
+// Note: this will erase previous bitmap. Use this method to updated the digit.
+static int digit_write(uint8_t xpos, uint8_t ypos, uint8_t dig) {
+    // no longer needed? the new blit function is set to OVERWRITE 
+    // so any umderlying graphics are deleted which would be the 
+    // previously rendered digit...
+    //digit_render(xpos,ypos,BLANK_DIGIT_IDX);
+    //if (dig < BLANK_DIGIT_IDX)
+    //    digit_render(xpos,ypos,dig);
+    return digit_render(xpos,ypos,dig);
+}
+
+
 void ledo_close( void ** ctx) {
     if (ctx) {
-        free(*ctx);
-        *ctx = 0;
+        return_session(*ctx);
+        *ctx = 0; // updates arg0 by voiding it
     }
 }
 
@@ -261,13 +352,14 @@ int ledo_refresh(void * _ctx) {
             uint8_t xposn = ctx->xpos;
             while (digidx) {
                 digidx --; // adjust to be an index and run it down to 0
+                // updates local frame buffer for each digit
                 digit_write(xposn, ctx->ypos, ctx->dval[digidx]);
                 xposn += (DIGIT_WIDTH + DIGIT_SPACE);
             }
-            rc = 0; // OK
+            // call the underlying compositor to merge layers and 
+            // update display
+            rc = gfx_displayRefresh();
         }
     }
     return rc;
 }
-
-#endif /* LED_OVERLAY */

@@ -48,6 +48,7 @@ add_executable( test_ssd1309
     ${CMAKE_CURRENT_LIST_DIR}/../../display/common/cpyutils.c
     ${CMAKE_CURRENT_LIST_DIR}/../../display/common/textgfx.c
     ${CMAKE_CURRENT_LIST_DIR}/../../display/common/linegfx.c
+    ${CMAKE_CURRENT_LIST_DIR}/../../display/common/led_overlay.c
     ${CMAKE_CURRENT_LIST_DIR}/../../display/ssd1309/ssd1309_driver.c
     test_ssd1309.c 
 )

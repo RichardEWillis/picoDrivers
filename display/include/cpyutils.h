@@ -123,5 +123,37 @@ int gfxutil_fbfb_copy(fbdata_t * from, fbdata_t * to);
 */
 int gfxutil_tbfb_copy(fbdata_t * from, fbdata_t * to);
 
+/******************************************************************************
+ * "Blit" one smaller framebuffer window into a larger (or fullsize) 
+ * Framebuffer. This is useful for some graphics layers that use ROM based
+ * pixel maps for sprites or other bitmap images.
+ * 
+ * buffer 'from' must include its width (pixels) and height (pages) as well 
+ * as whether to OR the bitmap into existing data or delete underlying data
+ * in the destination framebuffer and overwrite that area.
+ * 'from' must also give the top-left pixel coordinate to start in the destination
+ * framebuffer.
+ * 
+ * buffer 'to' must have its width (pixels) and height (pages) such that the 
+ * buffer octet array length is (width * pages) bytes.
+ * 
+ * (!) blit assumes that bitmap buffers are using a page size of 8 representing
+ *     8 pixel rows per octet so the given height is in 8-pixel page groups.
+ *     EXAMPLE - 64 x 16 bitmap:
+ *     X = 64   64 pixels across representing 64 octets to span width
+ *     Y = 2    page height is 2 octets so pixel height is (2 * 8) = 16 pixel 
+ *              rows   
+ *     in the above example, the buffer array length would be (64 * 2) = 128 bytes.
+ *     
+ * Returns:
+ *      0 := Success (EXIT_SUCCESS)
+ *      1 := failure, check params.
+ * 
+ */
+int gfxutil_blit(const uint8_t * from, size_t from_width, size_t from_pages, 
+    bool overwrite, size_t at_x, size_t at_y, uint8_t * to, size_t to_width, 
+    size_t to_pages);
+
+
 
 #endif /* __CPYUTILS_H__ */
